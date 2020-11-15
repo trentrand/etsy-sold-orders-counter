@@ -1,0 +1,3 @@
+build/
+firmware/
+lib/esp-open-rtos/include/private_ssid_config.h
