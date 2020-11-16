@@ -1,10 +1,13 @@
 PROGRAM=EtsySoldOrdersCounters
 PROGRAM_SRC_DIR=./src
-SERIAL_PORT=/dev/tty.SLAB_USBtoUART 
+SERIAL_PORT=/dev/ttyUSB0
 SERIAL_BAUD=115200
 
 ESPPORT=$(SERIAL_PORT)
 ESPBAUD=$(SERIAL_BAUD)
+
+EXTRA_COMPONENTS = extras/bearssl
+EXTRA_CFLAGS +=-DCONFIG_EPOCH_TIME=$(shell date --utc '+%s')
 
 include ./lib/esp-open-rtos/common.mk
 
