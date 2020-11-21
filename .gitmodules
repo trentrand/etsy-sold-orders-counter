@@ -1,3 +1,6 @@
 [submodule "lib/esp-open-rtos"]
 	path = lib/esp-open-rtos
 	url = https://github.com/SuperHouse/esp-open-rtos.git
+[submodule "lib/esp-gdbstub"]
+	path = lib/esp-gdbstub
+	url = https://github.com/resetnow/esp-gdbstub.git

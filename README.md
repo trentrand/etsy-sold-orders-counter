@@ -4,7 +4,12 @@ A desktop screen that displays a live counter of your Etsy store orders!
 
 __Powered by FreeRTOS on a ESP-8266 microcontroller__
 
-## Setup
+## Build
+
+This project extends the
+[esp-open-rtos makefile](https://github.com/SuperHouse/esp-open-rtos/blob/master/common.mk).
+
+### Setup
 
 You should follow standard instructions in the
 [esp-open-rtos README](https://github.com/SuperHouse/esp-open-rtos/blob/master/README.md)

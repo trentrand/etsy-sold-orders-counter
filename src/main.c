@@ -26,6 +26,9 @@
 #define CLOCK_SECONDS_PER_HOUR (CLOCK_MINUTES_PER_HOUR*CLOCK_SECONDS_PER_MINUTE)
 #define CLOCK_SECONDS_PER_DAY (CLOCK_HOURS_PER_DAY*CLOCK_SECONDS_PER_HOUR)
 
+// TODO: if dev
+#include "gdbstub.h"
+
 #define WEB_SERVER "openapi.etsy.com"
 #define WEB_PORT "443"
 #define WEB_URL "/v2/users/"ETSY_USER"/profile?api_key="ETSY_API_KEY
@@ -270,6 +273,10 @@ void http_get_task(void *pvParameters) {
 
 void user_init(void) {
   uart_set_baud(0, 115200);
+
+  // TODO: if dev
+  gdbstub_init();
+
   printf("SDK version:%s\n", sdk_system_get_sdk_version());
 
   struct sdk_station_config config = {

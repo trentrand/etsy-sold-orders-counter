@@ -5,11 +5,18 @@ SERIAL_BAUD=115200
 
 ESPPORT=$(SERIAL_PORT)
 ESPBAUD=$(SERIAL_BAUD)
+ESPTOOL_ARGS+=-fs 4MB
+
+EXTRA_CFLAGS+=-I./lib/esp-gdbstub/include
+EXTRA_LDFLAGS+=-L./lib/esp-gdbstub/lib
 
 EXTRA_COMPONENTS = extras/bearssl
 EXTRA_CFLAGS +=-DCONFIG_EPOCH_TIME=$(shell date --utc '+%s')
 
 include ./lib/esp-open-rtos/common.mk
+
+LIBS+=esp-gdbstub
+PROGRAM_CFLAGS+=-O0
 
 # Utility targets
 .PHONY: dev bootstrap monitor
@@ -33,3 +40,6 @@ bootstrap:
 
 monitor:
 	picocom -b $(SERIAL_BAUD) $(SERIAL_PORT)
+
+debug:
+	xtensa-lx106-elf-gdb -x gdbinit -ex 'target remote $(SERIAL_PORT)' build/$(PROGRAM).out
