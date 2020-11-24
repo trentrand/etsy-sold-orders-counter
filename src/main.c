@@ -1,8 +1,6 @@
 #include "espressif/esp_common.h"
 #include "esp/uart.h"
-#include "esp/hwrand.h"
 
-#include <unistd.h>
 #include <string.h>
 
 #include "FreeRTOS.h"
@@ -15,277 +13,283 @@
 #include "lwip/dns.h"
 #include "lwip/api.h"
 
-#include "bearssl.h"
-#include "./BearSSLTrustAnchors.h"
+#include "ssid_config.h"
 
-#include "../config.h"
+#include "mbedtls/config.h"
 
-#define CLOCK_SECONDS_PER_MINUTE (60UL)
-#define CLOCK_MINUTES_PER_HOUR (60UL)
-#define CLOCK_HOURS_PER_DAY (24UL)
-#define CLOCK_SECONDS_PER_HOUR (CLOCK_MINUTES_PER_HOUR*CLOCK_SECONDS_PER_MINUTE)
-#define CLOCK_SECONDS_PER_DAY (CLOCK_HOURS_PER_DAY*CLOCK_SECONDS_PER_HOUR)
+#include "mbedtls/net_sockets.h"
+#include "mbedtls/debug.h"
+#include "mbedtls/ssl.h"
+#include "mbedtls/entropy.h"
+#include "mbedtls/ctr_drbg.h"
+#include "mbedtls/error.h"
+#include "mbedtls/certs.h"
 
-// TODO: if dev
 #include "gdbstub.h"
 
 #define WEB_SERVER "openapi.etsy.com"
 #define WEB_PORT "443"
-#define WEB_URL "/v2/users/"ETSY_USER"/profile?api_key="ETSY_API_KEY
+#define WEB_URL "/v2/users/jmt07/profile?api_key=8maxfwg5jhac8cqpz7lhp92n"
 
-#define GET_REQUEST "GET "WEB_URL" HTTP/2\r\n\
-Host: "WEB_SERVER"\r\n\
-User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:82.0) Gecko/20100101 Firefox/82.0\r\n\
-Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8\r\n\
-Accept-Language: en-US,en;q=0.5\r\n\
-Accept-Encoding: gzip, deflate, br\r\n\
-Connection: keep-alive\r\n\
-Upgrade-Insecure-Requests: 1\r\n\
-Pragma: no-cache\r\n\
-Cache-Control: no-cache\r\n\
-\r\n"
+#define GET_REQUEST "GET "WEB_URL" HTTP/1.1\n\
+Host: "WEB_SERVER"\n\
+\n"
 
-// Low-level data read callback for the simplified SSL I/O API.
-static int sock_read(void *ctx, unsigned char *buf, size_t len) {
-  for (;;) {
-    ssize_t rlen;
+// Root cert for openapi.etsy.com, stored in cert.c. See instructions there for setup.
+extern const char *server_root_cert;
 
-    rlen = read(*(int *)ctx, buf, len);
-    if (rlen <= 0) {
-      if (rlen < 0 && errno == EINTR) {
-        continue;
-      }
-      return -1;
-    }
-    return (int)rlen;
-  }
-}
-
-
-// Low-level data write callback for the simplified SSL I/O API.
-static int sock_write(void *ctx, const unsigned char *buf, size_t len) {
-  for (;;) {
-    ssize_t wlen;
-
-    wlen = write(*(int *)ctx, buf, len);
-    if (wlen <= 0) {
-      if (wlen < 0 && errno == EINTR) {
-        continue;
-      }
-      return -1;
-    }
-    return (int)wlen;
-  }
-}
-
-/*
- * The hardcoded trust anchors. These are the two DN + public key that
- * correspond to the self-signed certificates cert-root-rsa.pem and
- * cert-root-ec.pem.
- *
- * C code for hardcoded trust anchors can be generated with the "brssl"
- * command-line tool (with the "ta" command). To build that tool run:
- *
- * $ cd /path/to/esp-open-rtos/extras/bearssl/BearSSL
- * $ make build/brssl
- *
- * Below is the imported "Let's Encrypt" root certificate, as howsmyssl
- * is depending on it:
- *
- * https://letsencrypt.org/certs/letsencryptauthorityx3.pem
- *
- * The generate the trust anchor code below, run:
- *
- * $ /path/to/esp-open-rtos/extras/bearssl/BearSSL/build/brssl \
- *   ta letsencryptauthorityx3.pem
- *
- * To get the server certificate for a given https host:
- *
- * $ openssl s_client -showcerts -servername www.howsmyssl.com \
- *   -connect www.howsmyssl.com:443 < /dev/null | \
- *   openssl x509 -outform pem > server.pem
- *
- * Or just use this website: https://openslab-osu.github.io/bearssl-certificate-utility/
- * with the "domains to include" set to openapi.etsy.com
+/* MBEDTLS_DEBUG_C disabled by default to save substantial bloating of
+ * firmware, define it in
+ * examples/http_get_mbedtls/include/mbedtls/config.h if you'd like
+ * debugging output.
  */
+#ifdef MBEDTLS_DEBUG_C
 
-/* Buffer to store a record + BearSSL state
- * We use MONO mode to save 16k of RAM.
- * This could be even smaller by using max_fragment_len, but
- * the etsy server doesn't seem to support it.
+/* Increase this value to see more TLS debug details,
+ * 0 prints nothing, 1 will print any errors, 4 will print _everything_
  */
-static unsigned char bearssl_buffer[BR_SSL_BUFSIZE_MONO];
+#define DEBUG_LEVEL 1
 
-static br_ssl_client_context sc;
-static br_x509_minimal_context xc;
-static br_sslio_context ioc;
+static void print_debug(void *ctx, int level, const char *file, int line, const char *str) {
+  ((void) level);
+
+  /* Shorten 'file' from the whole file path to just the filename
+   * This is a bit wasteful because the macros are compiled in with
+   * the full _FILE_ path in each case, so the firmware is bloated out
+   * by a few kb. But there's not a lot we can do about it...
+   */
+  char *file_sep = rindex(file, '/');
+  if(file_sep)
+    file = file_sep+1;
+
+  printf("%s:%04d: %s", file, line, str);
+}
+#endif
 
 void http_get_task(void *pvParameters) {
-  int successes = 0, failures = 0;
-  int provisional_time = 0;
+  int successes = 0, failures = 0, ret;
+  printf("HTTP get task starting...\n");
 
-  printf(GET_REQUEST);
+  uint32_t flags;
+  unsigned char buf[1024];
+  const char *pers = "ssl_client1";
 
-  while (1) {
-     // Wait until we can resolve the DNS for the server, as an indication
-     // our network is probably working...
-    const struct addrinfo hints = {
-      .ai_family = AF_INET,
-      .ai_socktype = SOCK_STREAM,
-    };
-    struct addrinfo *res = NULL;
-    int dns_err = 0;
-    do {
-      if (res) {
-        freeaddrinfo(res);
+  mbedtls_entropy_context entropy;
+  mbedtls_ctr_drbg_context ctr_drbg;
+  mbedtls_ssl_context ssl;
+  mbedtls_x509_crt cacert;
+  mbedtls_ssl_config conf;
+  mbedtls_net_context server_fd;
+
+  // Initialize the RNG and the session data
+  mbedtls_ssl_init(&ssl);
+  mbedtls_x509_crt_init(&cacert);
+  mbedtls_ctr_drbg_init(&ctr_drbg);
+  printf("\n  . Seeding the random number generator...");
+
+  mbedtls_ssl_config_init(&conf);
+
+  mbedtls_entropy_init(&entropy);
+  if((ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
+    (const unsigned char *) pers,
+    strlen(pers))) != 0)
+  {
+    printf(" failed\n  ! mbedtls_ctr_drbg_seed returned %d\n", ret);
+    abort();
+  }
+
+  printf(" ok\n");
+
+  // Initialize certificates
+  printf("  . Loading the CA root certificate ...");
+
+  ret = mbedtls_x509_crt_parse(&cacert, (uint8_t*)server_root_cert, strlen(server_root_cert)+1);
+  if(ret < 0) {
+    printf(" failed\n  !  mbedtls_x509_crt_parse returned -0x%x\n\n", -ret);
+    abort();
+  }
+
+  printf(" ok (%d skipped)\n", ret);
+
+  // Hostname set here should match CN in server certificate
+  if((ret = mbedtls_ssl_set_hostname(&ssl, WEB_SERVER)) != 0) {
+    printf(" failed\n  ! mbedtls_ssl_set_hostname returned %d\n\n", ret);
+    abort();
+  }
+
+  // Setup stuff
+  printf("  . Setting up the SSL/TLS structure...");
+
+  if((ret = mbedtls_ssl_config_defaults(&conf,
+          MBEDTLS_SSL_IS_CLIENT,
+          MBEDTLS_SSL_TRANSPORT_STREAM,
+          MBEDTLS_SSL_PRESET_DEFAULT)) != 0)
+  {
+    printf(" failed\n  ! mbedtls_ssl_config_defaults returned %d\n\n", ret);
+    goto exit;
+  }
+
+  printf(" ok\n");
+
+  /* OPTIONAL is not optimal for security, in this example it will print
+   * a warning if CA verification fails but it will continue to connect.
+   */
+  mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
+  mbedtls_ssl_conf_ca_chain(&conf, &cacert, NULL);
+  mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
+#ifdef MBEDTLS_DEBUG_C
+  mbedtls_debug_set_threshold(DEBUG_LEVEL);
+  mbedtls_ssl_conf_dbg(&conf, print_debug, stdout);
+#endif
+
+  if((ret = mbedtls_ssl_setup(&ssl, &conf)) != 0) {
+    printf(" failed\n  ! mbedtls_ssl_setup returned %d\n\n", ret);
+    goto exit;
+  }
+
+  /* Wait until we can resolve the DNS for the server, as an indication
+   * our network is probably working...
+   */
+  printf("Waiting for server DNS to resolve... ");
+  err_t dns_err;
+  ip_addr_t host_ip;
+  do {
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+    dns_err = netconn_gethostbyname(WEB_SERVER, &host_ip);
+  } while(dns_err != ERR_OK);
+  printf("done.\n");
+
+  while(1) {
+    mbedtls_net_init(&server_fd);
+    printf("top of loop, free heap = %u\n", xPortGetFreeHeapSize());
+    // Start the connection
+    printf("  . Connecting to %s:%s...", WEB_SERVER, WEB_PORT);
+
+    if((ret = mbedtls_net_connect(&server_fd, WEB_SERVER,
+            WEB_PORT, MBEDTLS_NET_PROTO_TCP)) != 0)
+    {
+      printf(" failed\n  ! mbedtls_net_connect returned %d\n\n", ret);
+      goto exit;
+    }
+
+    printf(" ok\n");
+
+    mbedtls_ssl_set_bio(&ssl, &server_fd, mbedtls_net_send, mbedtls_net_recv, NULL);
+
+    // Perform handshake
+    printf("  . Performing the SSL/TLS handshake...");
+
+    while((ret = mbedtls_ssl_handshake(&ssl)) != 0) {
+      if(ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+        printf(" failed\n  ! mbedtls_ssl_handshake returned -0x%x\n\n", -ret);
+        goto exit;
       }
-      vTaskDelay(1000 / portTICK_PERIOD_MS);
-      dns_err = getaddrinfo(WEB_SERVER, WEB_PORT, &hints, &res);
-    } while(dns_err != 0 || res == NULL);
-
-    int fd = socket(res->ai_family, res->ai_socktype, 0);
-    if (fd < 0) {
-      freeaddrinfo(res);
-      printf("socket failed\n");
-      failures++;
-      continue;
     }
 
-    printf("Initializing BearSSL... ");
-    br_ssl_client_init_full(&sc, &xc, TAs, TAs_NUM);
+    printf(" ok\n");
 
-    /*
-     * Set the I/O buffer to the provided array. We allocated a
-     * buffer large enough for full-duplex behaviour with all
-     * allowed sizes of SSL records, hence we set the last argument
-     * to 1 (which means "split the buffer into separate input and
-     * output areas").
-     */
-    br_ssl_engine_set_buffer(&sc.eng, bearssl_buffer, sizeof bearssl_buffer, 0);
+    // Verify the server certificate
+    printf("  . Verifying peer X.509 certificate...");
 
-    // Inject some entropy from the ESP hardware RNG
-    // This is necessary because we don't support any of the BearSSL methods
-    for (int i = 0; i < 10; i++) {
-      int rand = hwrand();
-      br_ssl_engine_inject_entropy(&sc.eng, &rand, 4);
+    /* In real life, we probably want to bail out when ret != 0 */
+    if((flags = mbedtls_ssl_get_verify_result(&ssl)) != 0)
+    {
+      gdbstub_do_break();
+      char vrfy_buf[512];
+
+      printf(" failed\n");
+
+      mbedtls_x509_crt_verify_info(vrfy_buf, sizeof(vrfy_buf), "  ! ", flags);
+
+      printf("%s\n", vrfy_buf);
+    }
+    else {
+      printf(" ok\n");
     }
 
-    /*
-     * Reset the client context, for a new handshake. We provide the
-     * target host name: it will be used for the SNI extension. The
-     * last parameter is 0: we are not trying to resume a session.
-     */
-    br_ssl_client_reset(&sc, WEB_SERVER, 0);
+    // Write the GET request
+    printf("  > Write to server:");
 
-    /*
-     * Initialise the simplified I/O wrapper context, to use our
-     * SSL client context, and the two callbacks for socket I/O.
-     */
-    br_sslio_init(&ioc, &sc.eng, sock_read, &fd, sock_write, &fd);
-    printf("done.\r\n");
+    int len = sprintf((char *) buf, GET_REQUEST);
 
-    // FIXME: set date & time using epoch time precompiler flag for now */
-    provisional_time = CONFIG_EPOCH_TIME + (xTaskGetTickCount()/configTICK_RATE_HZ);
-    xc.days = (provisional_time / CLOCK_SECONDS_PER_DAY) + 719528;
-    xc.seconds = provisional_time % CLOCK_SECONDS_PER_DAY;
-    printf("Time: %02i:%02i\r\n",
-        (int)(xc.seconds / CLOCK_SECONDS_PER_HOUR),
-        (int)((xc.seconds % CLOCK_SECONDS_PER_HOUR)/CLOCK_SECONDS_PER_MINUTE)
-        );
-
-    if (connect(fd, res->ai_addr, res->ai_addrlen) != 0) {
-      close(fd);
-      freeaddrinfo(res);
-      printf("connect failed\n");
-      failures++;
-      continue;
-    }
-    printf("Connected\r\n");
-
-    /*
-     * Note that while the context has, at that point, already
-     * assembled the ClientHello to send, nothing happened on the
-     * network yet. Real I/O will occur only with the next call.
-     *
-     * We write our simple HTTP request. We test the call
-     * for an error (-1), but this is not strictly necessary, since
-     * the error state "sticks": if the context fails for any reason
-     * (e.g. bad server certificate), then it will remain in failed
-     * state and all subsequent calls will return -1 as well.
-     */
-    if (br_sslio_write_all(&ioc, GET_REQUEST, strlen(GET_REQUEST)) != BR_ERR_OK) {
-      close(fd);
-      freeaddrinfo(res);
-      printf("br_sslio_write_all failed: %d\r\n", br_ssl_engine_last_error(&sc.eng));
-      failures++;
-      continue;
+    while((ret = mbedtls_ssl_write(&ssl, buf, len)) <= 0) {
+      if(ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+        printf(" failed\n  ! mbedtls_ssl_write returned %d\n\n", ret);
+        goto exit;
+      }
     }
 
-    // SSL is a buffered protocol: we make sure that all our request
-    // bytes are sent onto the wire.
-    br_sslio_flush(&ioc);
+    len = ret;
+    printf(" %d bytes written\n\n%s", len, (char *) buf);
 
-    //Read and print the server response
-    for (;;) {
-      int rlen;
-      unsigned char buf[128];
+    // Read the HTTP response
+    printf("  < Read from server:");
 
-      // TODO: add gdbstub_do_break(); here?
+    do {
+      len = sizeof(buf) - 1;
+      memset(buf, 0, sizeof(buf));
+      ret = mbedtls_ssl_read(&ssl, buf, len);
 
-      bzero(buf, 128);
-      // Leave the final byte for zero termination
-      rlen = br_sslio_read(&ioc, buf, sizeof(buf) - 1);
+      if(ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE)
+        continue;
 
-      if (rlen < 0) {
+      if(ret == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
+        ret = 0;
         break;
       }
-      if (rlen > 0) {
-        printf("%s", buf);
+
+      if(ret < 0) {
+        printf("failed\n  ! mbedtls_ssl_read returned %d\n\n", ret);
+        break;
       }
-    }
 
-    // If reading the response failed for any reason, we detect it here
-    if (br_ssl_engine_last_error(&sc.eng) != BR_ERR_OK) {
-      close(fd);
-      freeaddrinfo(res);
-      printf("failure, error = %d\r\n", br_ssl_engine_last_error(&sc.eng));
+      if(ret == 0) {
+        printf("\n\nEOF\n\n");
+        break;
+      }
+
+      len = ret;
+      printf(" %d bytes read %s\n\n", len, (char *) buf);
+    } while(1);
+
+    mbedtls_ssl_close_notify(&ssl);
+
+exit:
+    mbedtls_ssl_session_reset(&ssl);
+    mbedtls_net_free(&server_fd);
+
+    if(ret != 0) {
+      char error_buf[100];
+      mbedtls_strerror(ret, error_buf, 100);
+      printf("\n\nLast error was: %d - %s\n\n", ret, error_buf);
       failures++;
-      continue;
+    } else {
+      successes++;
     }
 
-    printf("\r\n\r\nfree heap pre  = %u\r\n", xPortGetFreeHeapSize());
-
-    // Close the connection and start over after a delay
-    close(fd);
-    freeaddrinfo(res);
-
-    printf("free heap post = %u\r\n", xPortGetFreeHeapSize());
-
-    successes++;
-    printf("successes = %d failures = %d\r\n", successes, failures);
-    for(int countdown = 10; countdown >= 0; countdown--) {
-      printf("%d...\n", countdown);
+    printf("\n\nsuccesses = %d failures = %d\n", successes, failures);
+    for(int countdown = successes ? 10 : 5; countdown >= 0; countdown--) {
+      printf("%d... ", countdown);
       vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
-    printf("Starting again!\r\n\r\n");
+    printf("\nStarting again!\n");
   }
 }
 
 void user_init(void) {
   uart_set_baud(0, 115200);
-
-  // TODO: if dev
-  gdbstub_init();
-
   printf("SDK version:%s\n", sdk_system_get_sdk_version());
+
+  gdbstub_init();
 
   struct sdk_station_config config = {
     .ssid = WIFI_SSID,
     .password = WIFI_PASS,
   };
 
+  // required to call wifi_set_opmode before station_set_config
   sdk_wifi_set_opmode(STATION_MODE);
   sdk_wifi_station_set_config(&config);
 
-  xTaskCreate(&http_get_task, "get_task", 4096, NULL, 2, NULL);
+  xTaskCreate(&http_get_task, "get_task", 2048, NULL, 2, NULL);
 }
