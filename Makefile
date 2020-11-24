@@ -10,8 +10,7 @@ ESPTOOL_ARGS+=-fs 4MB
 EXTRA_CFLAGS+=-I./lib/esp-gdbstub/include
 EXTRA_LDFLAGS+=-L./lib/esp-gdbstub/lib
 
-EXTRA_COMPONENTS = extras/bearssl
-EXTRA_CFLAGS +=-DCONFIG_EPOCH_TIME=$(shell date --utc '+%s')
+EXTRA_COMPONENTS = extras/mbedtls
 
 include ./lib/esp-open-rtos/common.mk
 
