@@ -25,6 +25,8 @@
 #include "mbedtls/error.h"
 #include "mbedtls/certs.h"
 
+#include "./controllers/max7219_display.c"
+
 #include "gdbstub.h"
 
 #define WEB_SERVER "openapi.etsy.com"
@@ -291,5 +293,8 @@ void user_init(void) {
   sdk_wifi_set_opmode(STATION_MODE);
   sdk_wifi_station_set_config(&config);
 
-  xTaskCreate(&http_get_task, "get_task", 2048, NULL, 2, NULL);
+  display_init();
+
+  xTaskCreate(&http_get_task, "Task: Fetch orders count", 2048, NULL, 2, NULL);
+  xTaskCreate(&display_render_task, "Task: Render order count", 2048, NULL, 3, NULL);
 }
