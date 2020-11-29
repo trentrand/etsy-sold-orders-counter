@@ -1,7 +1,7 @@
 /* This is the CA certificate for the CA trust chain of
-   www.howsmyssl.com in PEM format, as dumped via:
+   openapi.etsy.com in PEM format, as dumped via:
 
-   openssl s_client -showcerts -connect www.howsmyssl.com:443 </dev/null
+   openssl s_client -showcerts -connect openapi.etsy.com:443 </dev/null
 
    The CA cert is the last cert in the chain output by the server.
 */

@@ -29,6 +29,7 @@
 
 #include "gdbstub.h"
 
+#define WEB_SERVER_COMMON_NAME "etsy.com"
 #define WEB_SERVER "openapi.etsy.com"
 #define WEB_PORT "443"
 #define WEB_URL "/v2/users/jmt07/profile?api_key=8maxfwg5jhac8cqpz7lhp92n"
@@ -114,7 +115,7 @@ void http_get_task(void *pvParameters) {
   printf(" ok (%d skipped)\n", ret);
 
   // Hostname set here should match CN in server certificate
-  if((ret = mbedtls_ssl_set_hostname(&ssl, WEB_SERVER)) != 0) {
+  if((ret = mbedtls_ssl_set_hostname(&ssl, WEB_SERVER_COMMON_NAME)) != 0) {
     printf(" failed\n  ! mbedtls_ssl_set_hostname returned %d\n\n", ret);
     abort();
   }
@@ -167,7 +168,7 @@ void http_get_task(void *pvParameters) {
     // Start the connection
     printf("  . Connecting to %s:%s...", WEB_SERVER, WEB_PORT);
 
-    if((ret = mbedtls_net_connect(&server_fd, WEB_SERVER,
+    if((ret = mbedtls_net_connect(&server_fd, WEB_SERVER_COMMON_NAME,
             WEB_PORT, MBEDTLS_NET_PROTO_TCP)) != 0)
     {
       printf(" failed\n  ! mbedtls_net_connect returned %d\n\n", ret);
@@ -193,10 +194,9 @@ void http_get_task(void *pvParameters) {
     // Verify the server certificate
     printf("  . Verifying peer X.509 certificate...");
 
-    /* In real life, we probably want to bail out when ret != 0 */
+    /* TODO: We probably want to bail out when ret != 0 */
     if((flags = mbedtls_ssl_get_verify_result(&ssl)) != 0)
     {
-      gdbstub_do_break();
       char vrfy_buf[512];
 
       printf(" failed\n");
@@ -226,6 +226,7 @@ void http_get_task(void *pvParameters) {
 
     // Read the HTTP response
     printf("  < Read from server:");
+    fflush(stdout);
 
     do {
       len = sizeof(buf) - 1;
