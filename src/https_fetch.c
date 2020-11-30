@@ -18,6 +18,11 @@
 #include "mbedtls/error.h"
 #include "mbedtls/certs.h"
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "jsmn.h"
+
 #include "gdbstub.h"
 
 #define WEB_SERVER_COMMON_NAME "etsy.com"
@@ -59,6 +64,69 @@ static void print_debug(void *ctx, int level, const char *file, int line, const 
   printf("%s:%04d: %s", file, line, str);
 }
 #endif
+
+static int json_eq(const char *json, jsmntok_t *tok, const char *s) {
+	if (tok->type == JSMN_STRING && (int) strlen(s) == tok->end - tok->start &&
+			strncmp(json + tok->start, s, tok->end - tok->start) == 0) {
+		return 0;
+	}
+	return -1;
+}
+
+// Iterate tokens in root Object, which is expected to match schema:
+// {
+//   ...,
+//   results: [{
+//     ...,
+//     transaction_sold_count: 1234
+//   }]
+//  }
+//
+// If an error occurs while parsing, -1 will be returned.
+int parse_order_count(const char *json) {
+  int numTokens;
+  jsmn_parser parser;
+  jsmntok_t tokens[128]; // Actual response is about 73 tokens
+
+  jsmn_init(&parser);
+  numTokens = jsmn_parse(&parser, json, strlen(json), tokens, sizeof(tokens)/sizeof(tokens[0]));
+  if (numTokens < 0) {
+    printf("Failed to parse JSON. See JSMN error code %d\n", numTokens);
+  }
+
+  if (numTokens < 1 || tokens[0].type != JSMN_OBJECT) {
+    printf("Invalid JSON: Root of JSON expected to be Object\n");
+    return -1;
+  }
+
+  int i;
+  for (i = 1; i < numTokens; i++) {
+    if (json_eq(json, &tokens[i], "results") == 0) {
+      if (tokens[i + 1].type != JSMN_ARRAY || tokens[i + 1].size != 1) {
+        printf("Invalid JSON: Results property is not valid\n");
+        break;
+      }
+
+      if (tokens[i + 2].type != JSMN_OBJECT || tokens[i + 2].size == 0) {
+        printf("Invalid JSON: Results[0] is not valid\n");
+        break;
+      }
+      i+=2; // skip ahead to results[0] identifier
+      continue;
+    }
+
+    if (json_eq(json, &tokens[i], "transaction_sold_count") == 0) {
+      if (tokens[i + 1].type != JSMN_PRIMITIVE) {
+        printf("Invalid JSON: Transaction sold count not valid\n");
+        break;
+      }
+      int count = atoi(json + tokens[i + 1].start);
+      printf("Parsed order count: %d\n", count);
+      return count;
+    }
+  }
+  return -1;
+}
 
 void fetch_order_count_task(void *pvParameters) {
   int successes = 0, failures = 0, ret;
@@ -244,6 +312,8 @@ void fetch_order_count_task(void *pvParameters) {
 
       len = ret;
       printf(" %d bytes read %s\n\n", len, (char *) buf);
+      int orderCount = parse_order_count((char *) buf);
+      printf("Parsed order count: %d", orderCount);
       gdbstub_do_break();
     } while(1);
 
