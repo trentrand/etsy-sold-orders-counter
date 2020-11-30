@@ -10,7 +10,7 @@ ESPTOOL_ARGS+=-fs 4MB
 EXTRA_CFLAGS+=-I./lib/esp-gdbstub/include
 EXTRA_LDFLAGS+=-L./lib/esp-gdbstub/lib
 
-EXTRA_COMPONENTS = extras/mbedtls extras/max7219
+EXTRA_COMPONENTS = extras/mbedtls extras/jsmn extras/max7219
 
 include ./lib/esp-open-rtos/common.mk
 
