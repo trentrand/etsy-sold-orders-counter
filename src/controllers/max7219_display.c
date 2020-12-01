@@ -11,6 +11,8 @@
 #define MAX7219_CS_PIN 15
 #define MAX7219_TASK_DELAY 1000
 
+extern int orderCount;
+
 static max7219_display_t display = {
   .cs_pin       = MAX7219_CS_PIN,
   .digits       = 8,
@@ -20,6 +22,16 @@ static max7219_display_t display = {
 
 void display_init() {
   max7219_init(&display);
+}
+
+void renderEachDigit(void (*digitHandler)(int, int), int number) {
+  int cs = display.cascade_size - 1;
+  while (number > 0 && cs >= 0) {
+   int digit = number % 10;
+   digitHandler(digit, cs);
+   number /= 10;
+   cs--;
+  }
 }
 
 void display_render_digit(int digit, int cs) {
@@ -32,15 +44,10 @@ void display_render_task(void *pvParameters) {
   while (true) {
     max7219_clear(&display);
 
-    display_render_digit((counter+0) % 10, 0);
-    display_render_digit((counter+1) % 10, 1);
-    display_render_digit((counter+2) % 10, 2);
-    display_render_digit((counter+3) % 10, 3);
+    renderEachDigit(display_render_digit, orderCount);
 
     vTaskDelay(MAX7219_TASK_DELAY / portTICK_PERIOD_MS);
 
     counter++;
   }
 }
-
-
