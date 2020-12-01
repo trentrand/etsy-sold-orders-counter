@@ -34,6 +34,8 @@
 Host: "WEB_SERVER"\n\
 \n"
 
+extern int orderCount;
+
 // Root cert for openapi.etsy.com, stored in cert.c. See instructions there for setup.
 extern const char *server_root_cert;
 
@@ -312,7 +314,7 @@ void fetch_order_count_task(void *pvParameters) {
 
       len = ret;
       printf(" %d bytes read %s\n\n", len, (char *) buf);
-      int orderCount = parse_order_count((char *) buf);
+      orderCount = parse_order_count((char *) buf);
       printf("Parsed order count: %d", orderCount);
       gdbstub_do_break();
     } while(1);
