@@ -6,8 +6,6 @@
 
 #include <max7219/max7219.h>
 
-#include "gdbstub.h"
-
 #define MAX7219_CS_PIN 15
 #define MAX7219_TASK_DELAY 1000
 

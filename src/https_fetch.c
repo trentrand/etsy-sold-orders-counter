@@ -23,8 +23,6 @@
 #include <string.h>
 #include "jsmn.h"
 
-#include "gdbstub.h"
-
 #define WEB_SERVER_COMMON_NAME "etsy.com"
 #define WEB_SERVER "openapi.etsy.com"
 #define WEB_PORT "443"
@@ -316,7 +314,6 @@ void fetch_order_count_task(void *pvParameters) {
       printf(" %d bytes read %s\n\n", len, (char *) buf);
       orderCount = parse_order_count((char *) buf);
       printf("Parsed order count: %d", orderCount);
-      gdbstub_do_break();
     } while(1);
 
     mbedtls_ssl_close_notify(&ssl);

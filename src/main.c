@@ -9,7 +9,7 @@
 #include "./https_fetch.c"
 #include "./controllers/max7219_display.c"
 
-#include "gdbstub.h"
+/* #include "gdbstub.h" */
 
 int orderCount = 0;
 
@@ -26,7 +26,7 @@ void user_init(void) {
   sdk_wifi_set_opmode(STATION_MODE);
   sdk_wifi_station_set_config(&config);
 
-  gdbstub_init();
+  /* gdbstub_init(); */
 
   display_init();
   xTaskCreate(&fetch_order_count_task, "Task: Fetch order count", 2048, NULL, 2, NULL);
