@@ -4,6 +4,10 @@ A desktop screen that displays a live counter of your Etsy store orders!
 
 __Powered by FreeRTOS on a ESP-8266 microcontroller__
 
+![Product image](./assets/product-images/product.jpg)
+
+> See more images in the [assets directory](./assets/product-images)
+
 ## Build
 
 This project extends the
