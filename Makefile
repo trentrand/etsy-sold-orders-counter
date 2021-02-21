@@ -10,7 +10,7 @@ ESPTOOL_ARGS+=-fs 4MB
 # EXTRA_CFLAGS+=-I./lib/esp-gdbstub/include
 # EXTRA_LDFLAGS+=-L./lib/esp-gdbstub/lib
 
-EXTRA_COMPONENTS = extras/mbedtls extras/jsmn extras/max7219
+EXTRA_COMPONENTS = extras/dhcpserver $(abspath ../esp-homekit-demo/components/esp8266-open-rtos/wifi_config) extras/mbedtls extras/http-parser extras/jsmn extras/max7219
 
 include ./lib/esp-open-rtos/common.mk
 

@@ -4,8 +4,6 @@
 #include <max7219/max7219.h>
 #include "./digit_font.h"
 
-#include <max7219/max7219.h>
-
 #define MAX7219_CS_PIN 15
 #define MAX7219_TASK_DELAY 1000
 

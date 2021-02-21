@@ -2,3 +2,4 @@ build/
 firmware/
 lib/esp-open-rtos/include/private_ssid_config.h
 config.h
+.ccls-cache/
