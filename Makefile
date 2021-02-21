@@ -1,4 +1,4 @@
-PROGRAM=EtsySoldOrdersCounters
+PROGRAM=EtsySoldOrdersCounter
 PROGRAM_SRC_DIR=./src
 SERIAL_PORT=/dev/ttyUSB0
 SERIAL_BAUD=115200
