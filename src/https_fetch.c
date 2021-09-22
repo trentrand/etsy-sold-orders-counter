@@ -23,10 +23,13 @@
 #include <string.h>
 #include "jsmn.h"
 
-#define WEB_SERVER_COMMON_NAME "etsy.com"
-#define WEB_SERVER "openapi.etsy.com"
+/* #include "gdbstub.h" */
+
+#define WEB_SERVER_COMMON_NAME "cryptocompare.com"
+#define WEB_SERVER "min-api.cryptocompare.com"
 #define WEB_PORT "443"
-#define WEB_URL "/v2/users/jmt07/profile?api_key=8maxfwg5jhac8cqpz7lhp92n"
+// TODO: Use ETSY_USER and ETSY_API_KEY constants from config.h
+#define WEB_URL "/data/price?fsym=ETH&tsyms=USD"
 
 #define GET_REQUEST "GET "WEB_URL" HTTP/1.1\n\
 Host: "WEB_SERVER"\n\
@@ -101,27 +104,28 @@ int parse_order_count(const char *json) {
 
   int i;
   for (i = 1; i < numTokens; i++) {
-    if (json_eq(json, &tokens[i], "results") == 0) {
-      if (tokens[i + 1].type != JSMN_ARRAY || tokens[i + 1].size != 1) {
-        printf("Invalid JSON: Results property is not valid\n");
-        break;
-      }
+    /* if (json_eq(json, &tokens[i], "results") == 0) { */
+    /*   if (tokens[i + 1].type != JSMN_ARRAY || tokens[i + 1].size != 1) { */
+    /*     printf("Invalid JSON: Results property is not valid\n"); */
+    /*     break; */
+    /*   } */
 
-      if (tokens[i + 2].type != JSMN_OBJECT || tokens[i + 2].size == 0) {
-        printf("Invalid JSON: Results[0] is not valid\n");
-        break;
-      }
-      i+=2; // skip ahead to results[0] identifier
-      continue;
-    }
+    /*   if (tokens[i + 2].type != JSMN_OBJECT || tokens[i + 2].size == 0) { */
+    /*     printf("Invalid JSON: Results[0] is not valid\n"); */
+    /*     break; */
+    /*   } */
+    /*   i+=2; // skip ahead to results[0] identifier */
+    /*   continue; */
+    /* } */
 
-    if (json_eq(json, &tokens[i], "transaction_sold_count") == 0) {
+    if (json_eq(json, &tokens[i], "USD") == 0) {
       if (tokens[i + 1].type != JSMN_PRIMITIVE) {
         printf("Invalid JSON: Transaction sold count not valid\n");
         break;
       }
       int count = atoi(json + tokens[i + 1].start);
       printf("Parsed order count: %d\n", count);
+      /* gdbstub_do_break(); */
       return count;
     }
   }
