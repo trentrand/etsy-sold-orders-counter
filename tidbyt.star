@@ -9,7 +9,10 @@ iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAbhJREFUOE9VU0FO
 """)
 
 def main(config):
-    if config.get("user_id_or_name") == None or config.get("api_key") == None:
+    user_id_or_name=config.get("user_id_or_name")
+    api_key=config.get("api_key")
+
+    if user_id_or_name == None or  api_key == None:
       return render.Root(
         child =
           render.Column(
@@ -22,15 +25,15 @@ def main(config):
           )
       )
 
-    sales_cached = cache.get("sales")
+    sales_cached = cache.get(user_id_or_name)
     if sales_cached != None:
         print("Hit! Displaying cached data.")
         sales = int(sales_cached)
     else:
         print("Miss! Calling Etsy API.")
         request_url = "https://openapi.etsy.com/v2/users/{user_id_or_name}/profile?api_key={api_key}".format(
-          user_id_or_name=config.str("user_id_or_name"),
-          api_key=config.str("api_key"),
+          user_id_or_name=user_id_or_name,
+          api_key=api_key,
         )
 
         response = http.get(request_url)
@@ -47,7 +50,7 @@ def main(config):
         if response.status_code != 200:
             fail("Etsy request failed with status %d", response.status_code)
         sales = response.json()["results"][0]["transaction_sold_count"]
-        cache.set(config.str("user_id_or_name"), str(int(sales)), ttl_seconds=240)
+        cache.set(user_id_or_name, str(int(sales)), ttl_seconds=240)
 
     return render.Root(
         child = render.Box(
