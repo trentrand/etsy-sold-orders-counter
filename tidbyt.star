@@ -47,7 +47,7 @@ def main(config):
         if response.status_code != 200:
             fail("Etsy request failed with status %d", response.status_code)
         sales = response.json()["results"][0]["transaction_sold_count"]
-        cache.set("sales", str(int(sales)), ttl_seconds=240)
+        cache.set(config.str("user_id_or_name"), str(int(sales)), ttl_seconds=240)
 
     return render.Root(
         child = render.Box(
